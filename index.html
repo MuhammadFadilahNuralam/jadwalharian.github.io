@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jadwal Harian</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 30px;
+        }
+        
+        .input-container {
+            display: flex;
+            margin-bottom: 20px;
+            gap: 10px;
+        }
+        
+        #taskInput {
+            flex: 1;
+            padding: 12px 15px;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+            transition: border 0.3s;
+        }
+        
+        #taskInput:focus {
+            border-color: #3498db;
+            outline: none;
+        }
+        
+        button {
+            padding: 12px 20px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+        
+        button:hover {
+            background-color: #2980b9;
+        }
+        
+        #exportPdf {
+            background-color: #27ae60;
+        }
+        
+        #exportPdf:hover {
+            background-color: #219653;
+        }
+        
+        .task-list {
+            list-style-type: none;
+            padding: 0;
+        }
+        
+        .task-item {
+            background-color: white;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: transform 0.2s;
+        }
+        
+        .task-item:hover {
+            transform: translateY(-2px);
+        }
+        
+        .task-content {
+            display: flex;
+            align-items: center;
+            flex: 1;
+        }
+        
+        .task-checkbox {
+            margin-right: 15px;
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+        
+        .task-text {
+            flex: 1;
+            margin-right: 15px;
+            word-break: break-word;
+        }
+        
+        .task-text.completed {
+            text-decoration: line-through;
+            color: #95a5a6;
+        }
+        
+        .task-actions {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .edit-btn {
+            background-color: #f39c12;
+        }
+        
+        .edit-btn:hover {
+            background-color: #d35400;
+        }
+        
+        .delete-btn {
+            background-color: #e74c3c;
+        }
+        
+        .delete-btn:hover {
+            background-color: #c0392b;
+        }
+        
+        .empty-state {
+            text-align: center;
+            color: #7f8c8d;
+            padding: 30px;
+            background-color: white;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        
+        @media (max-width: 600px) {
+            .input-container {
+                flex-direction: column;
+            }
+            
+            button {
+                width: 100%;
+            }
+            
+            .task-item {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            
+            .task-content {
+                width: 100%;
+                margin-bottom: 10px;
+            }
+            
+            .task-actions {
+                width: 100%;
+                justify-content: flex-end;
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>Jadwal Harian Fadil & Lala</h1>
+    
+    <div class="input-container">
+        <input type="text" id="taskInput" placeholder="Masukkan tugas baru...">
+        <button id="addTask">Tambah Tugas</button>
+        <button id="exportPdf">Buat Pdf</button>
+    </div>
+    
+    <ul id="taskList" class="task-list">
+        <!-- Daftar tugas akan muncul di sini -->
+    </ul>
+    
+    <script>
+        // Inisialisasi jsPDF
+        const { jsPDF } = window.jspdf;
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            const taskInput = document.getElementById('taskInput');
+            const addTaskBtn = document.getElementById('addTask');
+            const taskList = document.getElementById('taskList');
+            const exportPdfBtn = document.getElementById('exportPdf');
+            
+            let tasks = [];
+            let editMode = false;
+            let editId = null;
+            
+            // Load tasks from localStorage
+            loadTasks();
+            
+            // Add task event
+            addTaskBtn.addEventListener('click', addTask);
+            taskInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    addTask();
+                }
+            });
+            
+            // Export to PDF event
+            exportPdfBtn.addEventListener('click', exportToPdf);
+            
+            function addTask() {
+                const taskText = taskInput.value.trim();
+                
+                if (taskText === '') {
+                    alert('Masukkan tugas terlebih dahulu!');
+                    return;
+                }
+                
+                if (editMode) {
+                    // Update existing task
+                    const taskIndex = tasks.findIndex(task => task.id === editId);
+                    if (taskIndex !== -1) {
+                        tasks[taskIndex].text = taskText;
+                    }
+                    editMode = false;
+                    editId = null;
+                    addTaskBtn.textContent = 'Tambah Tugas';
+                } else {
+                    // Add new task
+                    const newTask = {
+                        id: Date.now(),
+                        text: taskText,
+                        completed: false,
+                        createdAt: new Date().toISOString()
+                    };
+                    tasks.push(newTask);
+                }
+                
+                // Save and render
+                saveTasks();
+                renderTasks();
+                taskInput.value = '';
+                taskInput.focus();
+            }
+            
+            function renderTasks() {
+                taskList.innerHTML = '';
+                
+                if (tasks.length === 0) {
+                    taskList.innerHTML = '<div class="empty-state">Tidak ada tugas. Tambahkan tugas baru!</div>';
+                    return;
+                }
+                
+                // Urutkan tasks: yang belum selesai di atas, yang selesai di bawah
+                tasks.sort((a, b) => {
+                    if (a.completed === b.completed) {
+                        return new Date(b.createdAt) - new Date(a.createdAt);
+                    }
+                    return a.completed ? 1 : -1;
+                });
+                
+                tasks.forEach(task => {
+                    const taskItem = document.createElement('li');
+                    taskItem.className = 'task-item';
+                    
+                    taskItem.innerHTML = `
+                        <div class="task-content">
+                            <input type="checkbox" class="task-checkbox" ${task.completed ? 'checked' : ''} data-id="${task.id}">
+                            <div class="task-text ${task.completed ? 'completed' : ''}">${task.text}</div>
+                        </div>
+                        <div class="task-actions">
+                            <button class="edit-btn" data-id="${task.id}">Edit</button>
+                            <button class="delete-btn" data-id="${task.id}">Hapus</button>
+                        </div>
+                    `;
+                    
+                    taskList.appendChild(taskItem);
+                });
+                
+                // Add event listeners to checkboxes
+                document.querySelectorAll('.task-checkbox').forEach(checkbox => {
+                    checkbox.addEventListener('change', toggleTaskCompletion);
+                });
+                
+                // Add event listeners to edit and delete buttons
+                document.querySelectorAll('.edit-btn').forEach(btn => {
+                    btn.addEventListener('click', editTask);
+                });
+                
+                document.querySelectorAll('.delete-btn').forEach(btn => {
+                    btn.addEventListener('click', deleteTask);
+                });
+            }
+            
+            function toggleTaskCompletion(e) {
+                const taskId = parseInt(e.target.getAttribute('data-id'));
+                const task = tasks.find(task => task.id === taskId);
+                
+                if (task) {
+                    task.completed = e.target.checked;
+                    saveTasks();
+                    renderTasks();
+                }
+            }
+            
+            function editTask(e) {
+                const taskId = parseInt(e.target.getAttribute('data-id'));
+                const task = tasks.find(task => task.id === taskId);
+                
+                if (task) {
+                    taskInput.value = task.text;
+                    taskInput.focus();
+                    editMode = true;
+                    editId = taskId;
+                    addTaskBtn.textContent = 'Update Tugas';
+                }
+            }
+            
+            function deleteTask(e) {
+                const taskId = parseInt(e.target.getAttribute('data-id'));
+                tasks = tasks.filter(task => task.id !== taskId);
+                saveTasks();
+                renderTasks();
+                
+                // If we were in edit mode for this task, cancel edit
+                if (editMode && editId === taskId) {
+                    editMode = false;
+                    editId = null;
+                    taskInput.value = '';
+                    addTaskBtn.textContent = 'Tambah Tugas';
+                }
+            }
+            
+            function saveTasks() {
+                localStorage.setItem('tasks', JSON.stringify(tasks));
+            }
+            
+            function loadTasks() {
+                const savedTasks = localStorage.getItem('tasks');
+                if (savedTasks) {
+                    tasks = JSON.parse(savedTasks);
+                    renderTasks();
+                }
+            }
+            
+            function exportToPdf() {
+                if (tasks.length === 0) {
+                    alert('Tidak ada tugas untuk diexport!');
+                    return;
+                }
+                
+                const doc = new jsPDF();
+                
+                // Judul dokumen
+                doc.setFontSize(18);
+                doc.setTextColor(40, 62, 80); // Warna gelap
+                doc.text('DAFTAR TUGAS', 105, 20, { align: 'center' });
+                
+                // Informasi tanggal
+                doc.setFontSize(10);
+                doc.setTextColor(100, 100, 100);
+                const date = new Date();
+                const formattedDate = `${date.getDate()}/${date.getMonth()+1}/${date.getFullYear()} ${date.getHours()}:${date.getMinutes().toString().padStart(2, '0')}`;
+                doc.text(`Dibuat pada: ${formattedDate}`, 105, 28, { align: 'center' });
+                
+                // Header tabel
+                doc.setFontSize(12);
+                doc.setTextColor(255, 255, 255);
+                doc.setFillColor(52, 152, 219); // Warna biru
+                doc.rect(15, 35, 180, 10, 'F');
+                doc.text('No', 20, 41);
+                doc.text('Tugas', 40, 41);
+                doc.text('Status', 140, 41);
+                doc.text('Tanggal Dibuat', 165, 41);
+                
+                // Isi tabel
+                doc.setFontSize(10);
+                doc.setTextColor(0, 0, 0);
+                
+                let y = 46;
+                tasks.forEach((task, index) => {
+                    // Warna baris bergantian
+                    if (index % 2 === 0) {
+                        doc.setFillColor(240, 240, 240); // Abu-abu muda
+                    } else {
+                        doc.setFillColor(255, 255, 255); // Putih
+                    }
+                    doc.rect(15, y-1, 180, 8, 'F');
+                    
+                    // Border kiri, kanan, bawah
+                    doc.setDrawColor(200, 200, 200);
+                    doc.line(15, y+7, 195, y+7); // Garis bawah
+                    
+                    // Konten
+                    doc.text((index + 1).toString(), 20, y+5);
+                    
+                    // Potong teks jika terlalu panjang
+                    const taskText = doc.splitTextToSize(task.text, 90);
+                    doc.text(taskText, 40, y+5);
+                    
+                    // Status
+                    if (task.completed) {
+    doc.setTextColor(39, 174, 96); // Hijau
+} else {
+    doc.setTextColor(231, 76, 60); // Merah
+}
+
+                    doc.text(task.completed ? 'Selesai' : 'Belum Selesai', 140, y+5);
+                    doc.setTextColor(0, 0, 0);
+                    
+                    // Tanggal
+                    const createdDate = new Date(task.createdAt);
+                    const formattedTaskDate = `${createdDate.getDate()}/${createdDate.getMonth()+1}/${createdDate.getFullYear()}`;
+                    doc.text(formattedTaskDate, 175, y+5);
+                    
+                    y += 8;
+                    
+                    // Handle text overflow
+                    if (taskText.length > 1) {
+                        y += (taskText.length - 1) * 7;
+                    }
+                    
+                    // Add new page if needed
+                    if (y > 270) {
+                        doc.addPage();
+                        y = 20;
+                        
+                        // Header tabel di halaman baru
+                        doc.setFontSize(12);
+                        doc.setTextColor(255, 255, 255);
+                        doc.setFillColor(52, 152, 219);
+                        doc.rect(15, 15, 180, 10, 'F');
+                        doc.text('No', 20, 21);
+                        doc.text('Tugas', 40, 21);
+                        doc.text('Status', 150, 21);
+                        doc.text('Tanggal Dibuat', 165, 21);
+                        
+                        doc.setFontSize(10);
+                        doc.setTextColor(0, 0, 0);
+                        y = 26;
+                    }
+                });
+                
+                // Footer
+                const pageCount = doc.internal.getNumberOfPages();
+                for (let i = 1; i <= pageCount; i++) {
+                    doc.setPage(i);
+                    doc.setFontSize(8);
+                    doc.setTextColor(100, 100, 100);
+                    doc.text(`Halaman ${i} dari ${pageCount}`, 105, 285, { align: 'center' });
+                }
+                
+                const filename = `Daftar_Tugas_${date.getDate()}-${date.getMonth()+1}-${date.getFullYear()}.pdf`;
+                doc.save(filename);
+            }
+        });
+    </script>
+</body>
+</html>
